@@ -1,0 +1,26 @@
+---
+- name: Verify
+  hosts: all
+  tasks:
+    - name: Check kauket version
+      ansible.builtin.command: kauket version
+      register: kauket_version
+      changed_when: false
+
+    - name: Verify kauket is installed
+      ansible.builtin.assert:
+        that:
+          - kauket_version.rc == 0
+          - "'kauket' in kauket_version.stdout"
+
+    - name: Check ~/.config/kauket exists
+      ansible.builtin.stat:
+        path: "{{ ansible_facts['env']['HOME'] }}/.config/kauket"
+      register: kauket_config_stat
+
+    - name: Verify ~/.config/kauket directory mode
+      ansible.builtin.assert:
+        that:
+          - kauket_config_stat.stat.exists
+          - kauket_config_stat.stat.isdir
+          - kauket_config_stat.stat.mode == '0700'

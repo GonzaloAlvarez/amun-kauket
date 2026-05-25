@@ -1,0 +1,141 @@
+---
+- name: Map ansible_system to release os
+  ansible.builtin.set_fact:
+    kauket_release_os: "{{ {'Linux': 'linux', 'Darwin': 'darwin'}[ansible_system] }}"
+
+- name: Map ansible_architecture to release arch
+  ansible.builtin.set_fact:
+    kauket_release_arch: "{{ {'x86_64': 'amd64', 'amd64': 'amd64', 'aarch64': 'arm64', 'arm64': 'arm64'}[ansible_architecture] }}"
+
+- name: Compose release artifact name
+  ansible.builtin.set_fact:
+    kauket_release_tarball: "kauket_{{ kauket_version }}_{{ kauket_release_os }}_{{ kauket_release_arch }}.tar.gz"
+    kauket_release_url: "https://github.com/{{ kauket_repo }}/releases/download/v{{ kauket_version }}/kauket_{{ kauket_version }}_{{ kauket_release_os }}_{{ kauket_release_arch }}.tar.gz"
+    kauket_checksums_url: "https://github.com/{{ kauket_repo }}/releases/download/v{{ kauket_version }}/checksums.txt"
+    kauket_target_binary: "{{ kauket_install_dir }}/kauket"
+
+- name: Check installed kauket version
+  ansible.builtin.command: "{{ kauket_target_binary }} version"
+  register: kauket_installed_check
+  changed_when: false
+  failed_when: false
+
+- name: Decide whether to install or update
+  ansible.builtin.set_fact:
+    kauket_should_install: "{{ kauket_installed_check.rc != 0 or ('kauket ' + kauket_version) not in kauket_installed_check.stdout }}"
+
+- name: Ensure base utilities are present (Debian)
+  ansible.builtin.apt:
+    name:
+      - curl
+      - ca-certificates
+      - git
+      - openssh-client
+    state: present
+    update_cache: true
+  become: true
+  when:
+    - ansible_facts['os_family'] == 'Debian'
+    - kauket_should_install
+
+- name: Ensure base utilities are present (Arch)
+  community.general.pacman:
+    name:
+      - curl
+      - ca-certificates
+      - git
+      - openssh
+    state: present
+  become: true
+  when:
+    - ansible_facts['os_family'] == 'Archlinux'
+    - kauket_should_install
+
+- name: Ensure base utilities are present (macOS)
+  ansible.builtin.command: "command -v {{ item }}"
+  loop:
+    - curl
+    - git
+    - ssh
+  changed_when: false
+  when:
+    - ansible_facts['os_family'] == 'Darwin'
+    - kauket_should_install
+
+- name: Create download staging directory
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: kauket
+  register: kauket_stage
+  when: kauket_should_install
+
+- name: Download checksums.txt
+  ansible.builtin.get_url:
+    url: "{{ kauket_checksums_url }}"
+    dest: "{{ kauket_stage.path }}/checksums.txt"
+    mode: "0644"
+  when: kauket_should_install
+
+- name: Read expected checksum for this artifact
+  ansible.builtin.shell: "grep ' {{ kauket_release_tarball }}$' {{ kauket_stage.path }}/checksums.txt | awk '{print $1}'"
+  register: kauket_expected_sha
+  changed_when: false
+  when: kauket_should_install
+
+- name: Verify checksum line was found
+  ansible.builtin.assert:
+    that:
+      - kauket_expected_sha.stdout | length == 64
+    fail_msg: "could not locate sha256 for {{ kauket_release_tarball }} in checksums.txt"
+  when: kauket_should_install
+
+- name: Download release tarball with checksum verification
+  ansible.builtin.get_url:
+    url: "{{ kauket_release_url }}"
+    dest: "{{ kauket_stage.path }}/{{ kauket_release_tarball }}"
+    checksum: "sha256:{{ kauket_expected_sha.stdout }}"
+    mode: "0644"
+  when: kauket_should_install
+
+- name: Extract release tarball
+  ansible.builtin.command:
+    cmd: "tar -xzf {{ kauket_release_tarball }}"
+    chdir: "{{ kauket_stage.path }}"
+    creates: "{{ kauket_stage.path }}/kauket"
+  when: kauket_should_install
+
+- name: Install kauket binary
+  ansible.builtin.copy:
+    src: "{{ kauket_stage.path }}/kauket"
+    dest: "{{ kauket_target_binary }}"
+    mode: "0755"
+    remote_src: true
+  become: "{{ kauket_install_become }}"
+  when: kauket_should_install
+
+- name: Clean up staging directory
+  ansible.builtin.file:
+    path: "{{ kauket_stage.path }}"
+    state: absent
+  when: kauket_should_install
+
+- name: Ensure ~/.config/kauket exists with mode 0700
+  ansible.builtin.file:
+    path: "{{ kauket_config_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Verify kauket installation
+  ansible.builtin.command: "{{ kauket_target_binary }} version"
+  register: kauket_version_check
+  changed_when: false
+
+- name: Show kauket version
+  ansible.builtin.debug:
+    msg: "{{ kauket_version_check.stdout }}"
+
+- name: Print next-step hint
+  ansible.builtin.debug:
+    msg:
+      - "kauket installed"
+      - "next: kauket enroll --request ssh"

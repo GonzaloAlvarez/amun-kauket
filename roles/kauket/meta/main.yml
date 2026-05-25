@@ -1,0 +1,23 @@
+---
+galaxy_info:
+  role_name: kauket
+  namespace: gonzaloalvarez
+  author: Gonzalo Alvarez
+  description: Install kauket (direct-age, Git-backed, per-host secret bundle manager) across platforms
+  license: GPL-3.0
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: MacOSX
+      versions:
+        - all
+    - name: ArchLinux
+      versions:
+        - all
+dependencies: []
