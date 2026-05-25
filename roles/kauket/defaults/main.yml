@@ -1,6 +1,6 @@
 ---
 kauket_version: "1.0.0"
 kauket_repo: "GonzaloAlvarez/kauket"
-kauket_install_dir: "/usr/local/bin"
+kauket_install_dir: ""
 kauket_install_become: true
 kauket_config_dir: "{{ ansible_facts['env']['HOME'] }}/.config/kauket"

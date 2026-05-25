@@ -7,6 +7,11 @@
   ansible.builtin.set_fact:
     kauket_release_arch: "{{ {'x86_64': 'amd64', 'amd64': 'amd64', 'aarch64': 'arm64', 'arm64': 'arm64'}[ansible_architecture] }}"
 
+- name: Resolve default install directory when none provided
+  ansible.builtin.set_fact:
+    kauket_install_dir: "{{ '/opt/homebrew/bin' if (ansible_system == 'Darwin' and kauket_release_arch == 'arm64') else '/usr/local/bin' }}"
+  when: kauket_install_dir | length == 0
+
 - name: Compose release artifact name
   ansible.builtin.set_fact:
     kauket_release_tarball: "kauket_{{ kauket_version }}_{{ kauket_release_os }}_{{ kauket_release_arch }}.tar.gz"
@@ -102,6 +107,14 @@
     cmd: "tar -xzf {{ kauket_release_tarball }}"
     chdir: "{{ kauket_stage.path }}"
     creates: "{{ kauket_stage.path }}/kauket"
+  when: kauket_should_install
+
+- name: Ensure install directory exists
+  ansible.builtin.file:
+    path: "{{ kauket_install_dir }}"
+    state: directory
+    mode: "0755"
+  become: "{{ kauket_install_become }}"
   when: kauket_should_install
 
 - name: Install kauket binary
